@@ -1582,9 +1582,9 @@ await supabase
 
           <button
   onClick={async () => {
-    await supabase.auth.signOut();
-    router.push("/login");
-  }}
+  await supabase.auth.signOut();
+  window.location.href = "/login";
+}}
   className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-white/10"
 >
   <LogOut size={18} />
