@@ -115,6 +115,7 @@ const handleRunNewScan = () => {
 
   const [dragActive, setDragActive] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   const [optimizingId, setOptimizingId] = useState<string | null>(null);
@@ -307,30 +308,40 @@ const arrayBuffer = await response.arrayBuffer();
 });
 
 const handleUpload = async () => {
-  if (!uploadFile) return;
+  if (!uploadFile || uploading) return;
 
   try {
+    setUploading(true);
+    setUploadError(null);
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      showToast("Please login first", "error");
+      setUploading(false);
+      return;
+    }
+
     const fileExt = uploadFile.name.split(".").pop();
     const fileName = `${Date.now()}.${fileExt}`;
     const filePath = `uploads/${fileName}`;
 
-    /* Upload file */
-    const { error: uploadError } =
-      await supabase.storage
-        .from("resumes")
-        .upload(filePath, uploadFile);
+    const { error: uploadError } = await supabase.storage
+      .from("resumes")
+      .upload(filePath, uploadFile, {
+        upsert: true,
+      });
 
     if (uploadError) throw uploadError;
 
-    /* Get public URL */
-    const { data: publicData } =
-      supabase.storage
-        .from("resumes")
-        .getPublicUrl(filePath);
+    const { data: publicData } = supabase.storage
+      .from("resumes")
+      .getPublicUrl(filePath);
 
     const fileUrl = publicData.publicUrl;
 
-    /* Parse text */
     const formData = new FormData();
     formData.append("file", uploadFile);
 
@@ -341,61 +352,42 @@ const handleUpload = async () => {
 
     const parsed = await res.json();
 
-    /* Save DB row */
-    const {
-  data: { user },
-} = await supabase.auth.getUser();
-
-if (!user) {
-  showToast("Login required", "error");
-  return;
-}
-
-const {
-  data: { user: currentUser },
-} = await supabase.auth.getUser();
-
-if (!currentUser) {
-  showToast("Login required", "error");
-  return;
-}
-
-const { data, error } = await supabase
-  .from("resumes")
-  .insert([
-    {
-      name: uploadFile.name,
-      file_url: fileUrl,
-      parsed_text: parsed.text,
-      user_id: currentUser.id,
-    },
-  ])
-  .select()
-  .single();
+    const { data, error } = await supabase
+      .from("resumes")
+      .insert([
+        {
+          name: uploadFile.name,
+          file_url: fileUrl,
+          parsed_text: parsed.text || "",
+          user_id: user.id,
+        },
+      ])
+      .select()
+      .single();
 
     if (error) throw error;
 
-    const newResume = {
-      id: data.id,
-      name: data.name,
-      url: data.file_url,
-      text: data.parsed_text,
-      size: `${Math.round(uploadFile.size / 1024)} KB`,
-      uploadedAt: new Date().toLocaleDateString(),
-      isOptimized: false,
-    };
-
-    setResumes((prev) => [newResume, ...prev]);
-
-    setConfirmedResumeId(newResume.id);
-    setTempSelection(newResume.id);
+    setResumes((prev) => [
+      {
+        id: data.id,
+        name: data.name,
+        url: data.file_url,
+        text: data.parsed_text,
+        uploadedAt: new Date().toLocaleDateString(),
+        size: `${Math.round(uploadFile.size / 1024)} KB`,
+        isOptimized: false,
+      },
+      ...prev,
+    ]);
 
     setUploadFile(null);
     setIsUploadModalOpen(false);
 
     showToast("Resume uploaded successfully");
-  } catch (error) {
-    showToast("Upload failed", "error");
+  } catch (error: any) {
+    showToast(error.message || "Upload failed", "error");
+  } finally {
+    setUploading(false);
   }
 };
 
@@ -1390,13 +1382,13 @@ await supabase
             <div className="p-6 border-b flex justify-between">
               <h2 className="font-bold text-xl">Upload Resume</h2>
 
-              <button onClick={() => {
-  setIsUploadModalOpen(false);
-  setUploadFile(null);
-  setUploadError(null);
-}}>
-                <X />
-              </button>
+              <button
+  onClick={handleUpload}
+  disabled={uploading}
+  className="w-full h-14 rounded-2xl bg-[#0B1F3A] text-white font-semibold hover:opacity-95 disabled:opacity-60 disabled:cursor-not-allowed transition"
+>
+  {uploading ? "Uploading..." : "Upload Resume"}
+</button>
             </div>
 
             <div className="p-8">
@@ -1441,12 +1433,19 @@ await supabase
               )}
 
               <button
-                onClick={handleUpload}
-                disabled={!uploadFile}
-                className="w-full mt-5 bg-[#0B1F3A] text-white py-4 rounded-2xl disabled:bg-slate-300"
-              >
-                Upload & Save
-              </button>
+  onClick={handleUpload}
+  disabled={!uploadFile || uploading}
+  className="w-full mt-5 bg-[#0B1F3A] text-white py-4 rounded-2xl disabled:bg-slate-300 flex items-center justify-center gap-2"
+>
+  {uploading ? (
+    <>
+      <Loader2 className="animate-spin" size={18} />
+      Uploading...
+    </>
+  ) : (
+    "Upload & Save"
+  )}
+</button>
             </div>
           </div>
         </div>
