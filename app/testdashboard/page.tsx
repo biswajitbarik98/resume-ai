@@ -1581,8 +1581,10 @@ await supabase
 
           <button
   onClick={async () => {
-  await supabase.auth.signOut();
-  window.location.href = "/login";
+  await supabase.auth.signOut({ scope: "local" });
+  localStorage.clear();
+  sessionStorage.clear();
+  window.location.replace("/login");
 }}
   className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-white/10"
 >
