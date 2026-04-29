@@ -1,7 +1,14 @@
 "use client";
 
+import {
+  Document,
+  Packer,
+  Paragraph,
+  TextRun,
+} from "docx";
 import { supabase } from "@/lib/supabase";
 import mammoth from "mammoth";
+import jsPDF from "jspdf";
 import {
   useState,
   useRef,
@@ -10,7 +17,10 @@ import {
   type ReactNode,
 } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import {
+  usePathname,
+  useRouter,
+} from "next/navigation";
 import {
   LayoutDashboard,
   DiamondPercent,
@@ -24,17 +34,13 @@ import {
   X,
   CheckCircle2,
   FileUp,
-  AlertCircle,
   Loader2,
   ExternalLink,
   Sparkles,
   Download,
-  CheckCircle,
-  ArrowRight,
   FileSearch,
   ChevronUp,
   ChevronDown,
-  RotateCcw,
   Briefcase,
   Clock3,
   MapPin,
@@ -43,8 +49,36 @@ import {
   TrendingUp,
 } from "lucide-react";
 
+interface ResumeItem {
+  id: string;
+  name: string;
+  url: string;
+  text: string;
+  uploadedAt: string;
+  size: string;
+  isOptimized: boolean;
+}
+
+interface JobMeta {
+  title: string;
+  company: string;
+  employmentType: string;
+  skills: string[];
+  experience: string;
+  location: string;
+}
+
+interface ScanHistoryItem {
+  id: number;
+  role: string;
+  score: number;
+  resume: string | undefined;
+  date: string;
+}
+
 export default function DashboardPage() {
   const pathname = usePathname();
+  const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -62,7 +96,7 @@ export default function DashboardPage() {
   name: string;
 } | null>(null);
 
-const [scanHistory, setScanHistory] = useState<any[]>([]);
+const [scanHistory, setScanHistory] = useState<ScanHistoryItem[]>([]);
 
 const [scanInputMode, setScanInputMode] = useState<"text" | "url">("text");
 
@@ -97,10 +131,11 @@ const handleRunNewScan = () => {
 
   const [jobInput, setJobInput] = useState("");
   const [jobError, setJobError] = useState("");
-  const [jobMeta, setJobMeta] = useState<Record<string, any> | null>(null);
+  const [jobMeta, setJobMeta] = useState<JobMeta | null>(null);
 
   const [dragActive, setDragActive] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   const [optimizingId, setOptimizingId] = useState<string | null>(null);
@@ -116,17 +151,52 @@ const handleRunNewScan = () => {
     name: string;
   } | null>(null);
 
-  const [resumes, setResumes] = useState<any[]>([]);
+  const [resumes, setResumes] = useState<ResumeItem[]>([]);
 
   useEffect(() => {
-  const loadResumes = async () => {
-    const { data, error } = await supabase
-      .from("resumes")
-      .select("*")
-      .order("created_at", { ascending: false });
+  const checkUser = async () => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-    if (!error && data) {
-      const formatted = data.map((item) => ({
+    if (!user) {
+      router.push("/login");
+      return;
+    }
+  };
+
+  checkUser();
+}, [router]);
+
+useEffect(() => {
+  const loadResumes = async () => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) return;
+
+    const {
+  data: { user: currentUser },
+} = await supabase.auth.getUser();
+
+if (!currentUser) return;
+
+const { data, error } = await supabase
+  .from("resumes")
+  .select("*")
+  .eq("user_id", currentUser.id)
+  .order("created_at", {
+    ascending: false,
+  });
+
+    if (error) {
+      console.error(error);
+      return;
+    }
+
+    const formatted =
+      data?.map((item) => ({
         id: item.id,
         name: item.name,
         url: item.file_url,
@@ -134,12 +204,12 @@ const handleRunNewScan = () => {
         uploadedAt: new Date(
           item.created_at
         ).toLocaleDateString(),
-        size: "Saved",
-        isOptimized: false,
-      }));
+        size: "Saved Resume",
+        isOptimized:
+          item.name.includes("_AI_Optimized"),
+      })) || [];
 
-      setResumes(formatted);
-    }
+    setResumes(formatted);
   };
 
   loadResumes();
@@ -162,15 +232,20 @@ const handleRunNewScan = () => {
     setIsViewerLoading(true);
 
     try {
-      const response = await fetch(resume.url);
-      const arrayBuffer = await response.arrayBuffer();
+      const response = await fetch(`${resume.url}?t=${Date.now()}`);
+
+if (!response.ok) {
+  throw new Error("Unable to load file");
+}
+
+const arrayBuffer = await response.arrayBuffer();
 
       const result = await mammoth.convertToHtml({
         arrayBuffer,
       });
 
       setDocxHtml(result.value);
-    } catch (error) {
+    } catch {
       setDocxHtml(
         "<p style='color:red;'>Failed to preview DOCX file.</p>"
       );
@@ -251,30 +326,41 @@ const handleRunNewScan = () => {
 });
 
 const handleUpload = async () => {
-  if (!uploadFile) return;
+  if (!uploadFile || uploading) return;
 
   try {
+    setUploading(true);
+    setUploadError(null);
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      showToast("Please login first", "error");
+      setUploading(false);
+      return;
+    }
+
     const fileExt = uploadFile.name.split(".").pop();
+    // eslint-disable-next-line react-hooks/purity
     const fileName = `${Date.now()}.${fileExt}`;
     const filePath = `uploads/${fileName}`;
 
-    /* Upload file */
-    const { error: uploadError } =
-      await supabase.storage
-        .from("resumes")
-        .upload(filePath, uploadFile);
+    const { error: uploadError } = await supabase.storage
+      .from("resumes")
+      .upload(filePath, uploadFile, {
+        upsert: true,
+      });
 
     if (uploadError) throw uploadError;
 
-    /* Get public URL */
-    const { data: publicData } =
-      supabase.storage
-        .from("resumes")
-        .getPublicUrl(filePath);
+    const { data: publicData } = supabase.storage
+      .from("resumes")
+      .getPublicUrl(filePath);
 
     const fileUrl = publicData.publicUrl;
 
-    /* Parse text */
     const formData = new FormData();
     formData.append("file", uploadFile);
 
@@ -285,14 +371,14 @@ const handleUpload = async () => {
 
     const parsed = await res.json();
 
-    /* Save DB row */
     const { data, error } = await supabase
       .from("resumes")
       .insert([
         {
           name: uploadFile.name,
           file_url: fileUrl,
-          parsed_text: parsed.text,
+          parsed_text: parsed.text || "",
+          user_id: user.id,
         },
       ])
       .select()
@@ -300,27 +386,28 @@ const handleUpload = async () => {
 
     if (error) throw error;
 
-    const newResume = {
-      id: data.id,
-      name: data.name,
-      url: data.file_url,
-      text: data.parsed_text,
-      size: `${Math.round(uploadFile.size / 1024)} KB`,
-      uploadedAt: new Date().toLocaleDateString(),
-      isOptimized: false,
-    };
-
-    setResumes((prev) => [newResume, ...prev]);
-
-    setConfirmedResumeId(newResume.id);
-    setTempSelection(newResume.id);
+    setResumes((prev) => [
+      {
+        id: data.id,
+        name: data.name,
+        url: data.file_url,
+        text: data.parsed_text,
+        uploadedAt: new Date().toLocaleDateString(),
+        size: `${Math.round(uploadFile.size / 1024)} KB`,
+        isOptimized: false,
+      },
+      ...prev,
+    ]);
 
     setUploadFile(null);
     setIsUploadModalOpen(false);
 
     showToast("Resume uploaded successfully");
-  } catch (error) {
-    showToast("Upload failed", "error");
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    showToast(message || "Upload failed", "error");
+  } finally {
+    setUploading(false);
   }
 };
 
@@ -363,23 +450,132 @@ try {
     throw new Error(data.error);
   }
 
-  const optimizedText =
-    data.optimizedText;
+  const optimizedText = (
+  data.optimizedText || ""
+)
+  .replace(/\*\*/g, "")
+  .replace(/###/g, "")
+  .replace(/__/g, "")
+  .trim();
 
-  const blob = new Blob(
-    [optimizedText],
-    { type: "text/plain" }
-  );
+  const lines = optimizedText
+    .split("\n")
+    .map((line: string) => line.trim())
+    .filter(Boolean);
 
-  const fileName = `${Date.now()}_optimized.txt`;
+  const sectionTitles = [
+  "SUMMARY",
+  "PROFESSIONAL SUMMARY",
+  "SKILLS",
+  "TECHNICAL SKILLS",
+  "EXPERIENCE",
+  "WORK EXPERIENCE",
+  "EMPLOYMENT",
+  "PROJECTS",
+  "EDUCATION",
+  "CERTIFICATIONS",
+  "ACHIEVEMENTS",
+];
+
+const children = lines.map((line: string, index: number) => {
+  const upper = line.toUpperCase();
+
+  const isHeading =
+    sectionTitles.includes(upper) ||
+    line.endsWith(":");
+
+  const isBullet =
+    line.startsWith("-") ||
+    line.startsWith("•");
+
+  if (index === 0 && line.length < 45) {
+    return new Paragraph({
+      spacing: { after: 220 },
+      children: [
+        new TextRun({
+          text: line,
+          bold: true,
+          size: 34,
+          font: "Calibri",
+        }),
+      ],
+    });
+  }
+
+  if (isHeading) {
+    return new Paragraph({
+      spacing: {
+        before: 260,
+        after: 140,
+      },
+      children: [
+        new TextRun({
+          text: line.replace(":", ""),
+          bold: true,
+          size: 28,
+          font: "Calibri",
+        }),
+      ],
+    });
+  }
+
+  if (isBullet) {
+    return new Paragraph({
+      bullet: { level: 0 },
+      spacing: { after: 100 },
+      children: [
+        new TextRun({
+          text: line
+            .replace(/^[-•]\s*/, ""),
+          size: 24,
+          font: "Calibri",
+        }),
+      ],
+    });
+  }
+
+  return new Paragraph({
+    spacing: { after: 100 },
+    children: [
+      new TextRun({
+        text: line,
+        size: 24,
+        font: "Calibri",
+      }),
+    ],
+  });
+});
+
+const doc = new Document({
+  sections: [
+    {
+      properties: {},
+      children,
+    },
+  ],
+});
+
+const buffer = await Packer.toBuffer(doc);
+const uint8Array = new Uint8Array(buffer as unknown as ArrayBuffer);
+
+// eslint-disable-next-line react-hooks/purity
+const fileName = `${Date.now()}_optimized.docx`;
+
+const file = new File(
+  [uint8Array],
+  fileName,
+  {
+    type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  }
+);
 
   const filePath = `uploads/${fileName}`;
 
   const { error: uploadError } =
     await supabase.storage
       .from("resumes")
-      .upload(filePath, blob, {
-        contentType: "text/plain",
+      .upload(filePath, file, {
+        contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       });
 
   if (uploadError) throw uploadError;
@@ -394,20 +590,39 @@ try {
 
   const newName =
     originalName.replace(/\.[^/.]+$/, "") +
-    "_AI_Optimized.txt";
+    "_AI_Optimized.docx";
 
-  const { data: savedRow, error } =
-    await supabase
-      .from("resumes")
-      .insert([
-        {
-          name: newName,
-          file_url: fileUrl,
-          parsed_text: optimizedText,
-        },
-      ])
-      .select()
-      .single();
+  const {
+  data: { user },
+} = await supabase.auth.getUser();
+
+if (!user) {
+  showToast("Login required", "error");
+  return;
+}
+
+const {
+  data: { user: currentUser },
+} = await supabase.auth.getUser();
+
+if (!currentUser) {
+  showToast("Login required", "error");
+  return;
+}
+
+const { data: savedRow, error } =
+  await supabase
+    .from("resumes")
+    .insert([
+      {
+        name: newName,
+        file_url: fileUrl,
+        parsed_text: optimizedText,
+        user_id: currentUser.id,
+      },
+    ])
+    .select()
+    .single();
 
   if (error) throw error;
 
@@ -428,9 +643,10 @@ try {
   showToast(
     "AI optimized resume created"
   );
-} catch (error: any) {
+} catch (error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
   showToast(
-    error.message ||
+    message ||
       "Optimization failed",
     "error"
   );
@@ -653,9 +869,11 @@ setScanData({
   ]);
 }, 1500);
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     setScanLoading(false);
-    setJobError(error.message);
+    setJobError(
+      error instanceof Error ? error.message : String(error)
+    );
   }
 };
 
@@ -709,6 +927,72 @@ Areas to Improve:
 
     URL.revokeObjectURL(url);
   };
+
+  const generateResumePDF = (
+  fileName: string,
+  content: string
+) => {
+  const pdf = new jsPDF();
+
+  const pageWidth =
+    pdf.internal.pageSize.getWidth();
+
+  let y = 20;
+
+  const lines = content
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  lines.forEach((line, index) => {
+    const upper = line.toUpperCase();
+
+    const isHeading = [
+      "SUMMARY",
+      "SKILLS",
+      "EXPERIENCE",
+      "EDUCATION",
+      "PROJECTS",
+      "CERTIFICATIONS",
+    ].includes(upper);
+
+    if (index === 0) {
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(20);
+      pdf.text(line, 20, y);
+      y += 12;
+      return;
+    }
+
+    if (isHeading) {
+      y += 6;
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(14);
+      pdf.text(line, 20, y);
+      y += 8;
+      return;
+    }
+
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(11);
+
+    const wrapped = pdf.splitTextToSize(
+      line,
+      pageWidth - 40
+    );
+
+    pdf.text(wrapped, 20, y);
+
+    y += wrapped.length * 6;
+
+    if (y > 270) {
+      pdf.addPage();
+      y = 20;
+    }
+  });
+
+  pdf.save(fileName);
+};
 
   return (
     <div className="min-h-screen bg-[#D9D9D9] text-[#0B1F3A] overflow-x-hidden">
@@ -823,10 +1107,15 @@ Areas to Improve:
     }
 
     /* Delete DB row */
-    await supabase
-      .from("resumes")
-      .delete()
-      .eq("id", resumeToDelete.id);
+    const {
+  data: { user },
+} = await supabase.auth.getUser();
+
+await supabase
+  .from("resumes")
+  .delete()
+  .eq("id", resumeToDelete.id)
+  .eq("user_id", user?.id);
 
     /* Remove UI */
     setResumes((prev) =>
@@ -848,7 +1137,7 @@ Areas to Improve:
     showToast(
       "Resume deleted successfully"
     );
-  } catch (error) {
+  } catch {
     showToast(
       "Delete failed",
       "error"
@@ -891,42 +1180,51 @@ Areas to Improve:
 
       <div className="grid grid-cols-2 gap-3 mt-6">
         <button
-          onClick={() => {
-            setRenameResume(null);
-            setRenameValue("");
-          }}
-          className="border rounded-2xl py-3 font-medium hover:bg-slate-50"
-        >
-          Cancel
-        </button>
+  onClick={() => {
+    setRenameResume(null);
+    setRenameValue("");
+  }}
+  className="border rounded-2xl py-3 font-medium hover:bg-slate-50"
+>
+  Cancel
+</button>
 
         <button
-          onClick={() => {
-            if (!renameValue.trim()) return;
+          onClick={async () => {
+  if (!renameValue.trim()) return;
 
-            const oldName = renameResume.name;
-            const ext =
-              "." +
-              oldName.split(".").pop();
+  try {
+    const oldName = renameResume.name;
+    const ext = "." + oldName.split(".").pop();
 
-            setResumes((prev) =>
-              prev.map((resume) =>
-                resume.id ===
-                renameResume.id
-                  ? {
-                      ...resume,
-                      name:
-                        renameValue.trim() +
-                        ext,
-                    }
-                  : resume
-              )
-            );
+    const newName = renameValue.trim() + ext;
 
-            setRenameResume(null);
-            setRenameValue("");
-            showToast("Resume renamed successfully");
-          }}
+    // ✅ Update DB first
+    await supabase
+      .from("resumes")
+      .update({
+        name: newName,
+      })
+      .eq("id", renameResume.id);
+
+    // ✅ Then update UI
+    setResumes((prev) =>
+      prev.map((resume) =>
+        resume.id === renameResume.id
+          ? { ...resume, name: newName }
+          : resume
+      )
+    );
+
+    setRenameResume(null);
+    setRenameValue("");
+
+    showToast("Resume renamed successfully");
+  } catch {
+    showToast("Rename failed", "error");
+  }
+}}
+
           className="bg-blue-600 text-white rounded-2xl py-3 font-medium hover:bg-blue-700"
         >
           Save Changes
@@ -1108,13 +1406,13 @@ Areas to Improve:
             <div className="p-6 border-b flex justify-between">
               <h2 className="font-bold text-xl">Upload Resume</h2>
 
-              <button onClick={() => {
-  setIsUploadModalOpen(false);
-  setUploadFile(null);
-  setUploadError(null);
-}}>
-                <X />
-              </button>
+              <button
+  onClick={handleUpload}
+  disabled={uploading}
+  className="w-full h-14 rounded-2xl bg-[#0B1F3A] text-white font-semibold hover:opacity-95 disabled:opacity-60 disabled:cursor-not-allowed transition"
+>
+  {uploading ? "Uploading..." : "Upload Resume"}
+</button>
             </div>
 
             <div className="p-8">
@@ -1159,12 +1457,19 @@ Areas to Improve:
               )}
 
               <button
-                onClick={handleUpload}
-                disabled={!uploadFile}
-                className="w-full mt-5 bg-[#0B1F3A] text-white py-4 rounded-2xl disabled:bg-slate-300"
-              >
-                Upload & Save
-              </button>
+  onClick={handleUpload}
+  disabled={!uploadFile || uploading}
+  className="w-full mt-5 bg-[#0B1F3A] text-white py-4 rounded-2xl disabled:bg-slate-300 flex items-center justify-center gap-2"
+>
+  {uploading ? (
+    <>
+      <Loader2 className="animate-spin" size={18} />
+      Uploading...
+    </>
+  ) : (
+    "Upload & Save"
+  )}
+</button>
             </div>
           </div>
         </div>
@@ -1298,10 +1603,17 @@ Areas to Improve:
             ))}
           </div>
 
-          <button className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-white/10">
-            <LogOut size={18} />
-            Logout
-          </button>
+          <button
+  type="button"
+  onClick={async () => {
+    await supabase.auth.signOut();
+    window.location.href = "/login";
+  }}
+  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-white/10 cursor-pointer"
+>
+  <LogOut size={18} />
+  <span>Logout</span>
+</button>
         </aside>
 
         {/* MAIN */}
@@ -1508,38 +1820,53 @@ Areas to Improve:
           </button>
 
           {resume.isOptimized ? (
-            <a
-              href={resume.url}
-              download
-              className="px-5 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition flex items-center gap-2"
-            >
-              <Download size={14} />
-              Download
-            </a>
-          ) : (
-            <button
-              onClick={() =>
-                handleOptimize(resume.id, resume.name)
-              }
-              disabled={optimizingId === resume.id}
-              className="px-5 py-2.5 rounded-xl border border-purple-300 text-purple-600 text-sm font-medium hover:bg-purple-50 transition flex items-center gap-2 disabled:opacity-60"
-            >
-              {optimizingId === resume.id ? (
-                <>
-                  <Loader2
-                    size={14}
-                    className="animate-spin"
-                  />
-                  Optimizing...
-                </>
-              ) : (
-                <>
-                  <Sparkles size={14} />
-                  Optimize with AI
-                </>
-              )}
-            </button>
-          )}
+  <div className="flex gap-2">
+    <a
+      href={resume.url}
+      download
+      className="px-5 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition flex items-center gap-2"
+    >
+      <Download size={14} />
+      DOCX
+    </a>
+
+    <button
+      onClick={() =>
+        generateResumePDF(
+          resume.name.replace(".docx", ".pdf"),
+          resume.text
+        )
+      }
+      className="px-5 py-2.5 rounded-xl bg-red-500 text-white text-sm font-medium hover:bg-red-600 transition flex items-center gap-2"
+    >
+      <Download size={14} />
+      PDF
+    </button>
+  </div>
+) : (
+  <button
+    onClick={() =>
+      handleOptimize(resume.id, resume.name)
+    }
+    disabled={optimizingId === resume.id}
+    className="px-5 py-2.5 rounded-xl border border-purple-300 text-purple-600 text-sm font-medium hover:bg-purple-50 transition flex items-center gap-2 disabled:opacity-60"
+  >
+    {optimizingId === resume.id ? (
+      <>
+        <Loader2
+          size={14}
+          className="animate-spin"
+        />
+        Optimizing...
+      </>
+    ) : (
+      <>
+        <Sparkles size={14} />
+        Optimize with AI
+      </>
+    )}
+  </button>
+)}
         </div>
       </div>
     </div>

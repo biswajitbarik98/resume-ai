@@ -34,17 +34,13 @@ import {
   X,
   CheckCircle2,
   FileUp,
-  AlertCircle,
   Loader2,
   ExternalLink,
   Sparkles,
   Download,
-  CheckCircle,
-  ArrowRight,
   FileSearch,
   ChevronUp,
   ChevronDown,
-  RotateCcw,
   Briefcase,
   Clock3,
   MapPin,
@@ -52,6 +48,33 @@ import {
   ShieldCheck,
   TrendingUp,
 } from "lucide-react";
+
+interface ResumeItem {
+  id: string;
+  name: string;
+  url: string;
+  text: string;
+  uploadedAt: string;
+  size: string;
+  isOptimized: boolean;
+}
+
+interface JobMeta {
+  title: string;
+  company: string;
+  employmentType: string;
+  skills: string[];
+  experience: string;
+  location: string;
+}
+
+interface ScanHistoryItem {
+  id: number;
+  role: string;
+  score: number;
+  resume: string | undefined;
+  date: string;
+}
 
 export default function DashboardPage() {
   const pathname = usePathname();
@@ -73,10 +96,7 @@ export default function DashboardPage() {
   name: string;
 } | null>(null);
 
-const [currentUserId, setCurrentUserId] =
-  useState<string | null>(null);
-
-const [scanHistory, setScanHistory] = useState<any[]>([]);
+const [scanHistory, setScanHistory] = useState<ScanHistoryItem[]>([]);
 
 const [scanInputMode, setScanInputMode] = useState<"text" | "url">("text");
 
@@ -111,7 +131,7 @@ const handleRunNewScan = () => {
 
   const [jobInput, setJobInput] = useState("");
   const [jobError, setJobError] = useState("");
-  const [jobMeta, setJobMeta] = useState<Record<string, any> | null>(null);
+  const [jobMeta, setJobMeta] = useState<JobMeta | null>(null);
 
   const [dragActive, setDragActive] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -131,7 +151,7 @@ const handleRunNewScan = () => {
     name: string;
   } | null>(null);
 
-  const [resumes, setResumes] = useState<any[]>([]);
+  const [resumes, setResumes] = useState<ResumeItem[]>([]);
 
   useEffect(() => {
   const checkUser = async () => {
@@ -143,8 +163,6 @@ const handleRunNewScan = () => {
       router.push("/login");
       return;
     }
-
-    setCurrentUserId(user.id);
   };
 
   checkUser();
@@ -227,7 +245,7 @@ const arrayBuffer = await response.arrayBuffer();
       });
 
       setDocxHtml(result.value);
-    } catch (error) {
+    } catch {
       setDocxHtml(
         "<p style='color:red;'>Failed to preview DOCX file.</p>"
       );
@@ -325,6 +343,7 @@ const handleUpload = async () => {
     }
 
     const fileExt = uploadFile.name.split(".").pop();
+    // eslint-disable-next-line react-hooks/purity
     const fileName = `${Date.now()}.${fileExt}`;
     const filePath = `uploads/${fileName}`;
 
@@ -384,8 +403,9 @@ const handleUpload = async () => {
     setIsUploadModalOpen(false);
 
     showToast("Resume uploaded successfully");
-  } catch (error: any) {
-    showToast(error.message || "Upload failed", "error");
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    showToast(message || "Upload failed", "error");
   } finally {
     setUploading(false);
   }
@@ -538,6 +558,7 @@ const doc = new Document({
 const buffer = await Packer.toBuffer(doc);
 const uint8Array = new Uint8Array(buffer as unknown as ArrayBuffer);
 
+// eslint-disable-next-line react-hooks/purity
 const fileName = `${Date.now()}_optimized.docx`;
 
 const file = new File(
@@ -622,9 +643,10 @@ const { data: savedRow, error } =
   showToast(
     "AI optimized resume created"
   );
-} catch (error: any) {
+} catch (error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
   showToast(
-    error.message ||
+    message ||
       "Optimization failed",
     "error"
   );
@@ -847,9 +869,11 @@ setScanData({
   ]);
 }, 1500);
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     setScanLoading(false);
-    setJobError(error.message);
+    setJobError(
+      error instanceof Error ? error.message : String(error)
+    );
   }
 };
 
@@ -1113,7 +1137,7 @@ await supabase
     showToast(
       "Resume deleted successfully"
     );
-  } catch (error) {
+  } catch {
     showToast(
       "Delete failed",
       "error"
@@ -1196,7 +1220,7 @@ await supabase
     setRenameValue("");
 
     showToast("Resume renamed successfully");
-  } catch (error) {
+  } catch {
     showToast("Rename failed", "error");
   }
 }}
@@ -1580,16 +1604,15 @@ await supabase
           </div>
 
           <button
+  type="button"
   onClick={async () => {
-  await supabase.auth.signOut({ scope: "local" });
-  localStorage.clear();
-  sessionStorage.clear();
-  window.location.replace("/login");
-}}
-  className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-white/10"
+    await supabase.auth.signOut();
+    window.location.href = "/login";
+  }}
+  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-white/10 cursor-pointer"
 >
   <LogOut size={18} />
-  Logout
+  <span>Logout</span>
 </button>
         </aside>
 
