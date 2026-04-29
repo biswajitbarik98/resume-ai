@@ -333,14 +333,16 @@ const handleUpload = async () => {
     setUploadError(null);
 
     const {
-      data: { user },
-    } = await supabase.auth.getUser();
+  data: { session },
+} = await supabase.auth.getSession();
 
-    if (!user) {
-      showToast("Please login first", "error");
-      setUploading(false);
-      return;
-    }
+const userId = session?.user?.id;
+
+if (!userId) {
+  showToast("Please login again", "error");
+  setUploading(false);
+  return; 
+}
 
     const fileExt = uploadFile.name.split(".").pop();
     // eslint-disable-next-line react-hooks/purity
@@ -378,7 +380,7 @@ const handleUpload = async () => {
           name: uploadFile.name,
           file_url: fileUrl,
           parsed_text: parsed.text || "",
-          user_id: user.id,
+          user_id: userId,
         },
       ])
       .select()
@@ -1403,17 +1405,28 @@ await supabase
       {isUploadModalOpen && (
         <div className="fixed inset-0 bg-black/60 z-[110] grid place-items-center p-4">
           <div className="bg-white rounded-3xl max-w-xl w-full overflow-hidden">
-            <div className="p-6 border-b flex justify-between">
-              <h2 className="font-bold text-xl">Upload Resume</h2>
+            <div className="p-6 border-b flex justify-between items-start">
+  <div>
+    <h2 className="font-bold text-xl text-[#0B1F3A]">
+      Upload Resume
+    </h2>
 
-              <button
-  onClick={handleUpload}
-  disabled={uploading}
-  className="w-full h-14 rounded-2xl bg-[#0B1F3A] text-white font-semibold hover:opacity-95 disabled:opacity-60 disabled:cursor-not-allowed transition"
->
-  {uploading ? "Uploading..." : "Upload Resume"}
-</button>
-            </div>
+    <p className="text-sm text-slate-500 mt-1">
+      Upload PDF or DOCX (Max 2 MB)
+    </p>
+  </div>
+
+  <button
+    onClick={() => {
+      setIsUploadModalOpen(false);
+      setUploadFile(null);
+      setUploadError(null);
+    }}
+    className="w-10 h-10 rounded-xl hover:bg-slate-100 flex items-center justify-center transition"
+  >
+    <X size={20} />
+  </button>
+</div>
 
             <div className="p-8">
               {!uploadFile ? (

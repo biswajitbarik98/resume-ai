@@ -1405,14 +1405,27 @@ await supabase
       {isUploadModalOpen && (
         <div className="fixed inset-0 bg-black/60 z-[110] grid place-items-center p-4">
           <div className="bg-white rounded-3xl max-w-xl w-full overflow-hidden">
-            <div className="p-6 border-b">
-  <h2 className="font-bold text-xl text-[#0B1F3A]">
-    Upload Resume
-  </h2>
+            <div className="p-6 border-b flex justify-between items-start">
+  <div>
+    <h2 className="font-bold text-xl text-[#0B1F3A]">
+      Upload Resume
+    </h2>
 
-  <p className="text-sm text-slate-500 mt-1">
-    Upload PDF or DOCX (Max 2 MB)
-  </p>
+    <p className="text-sm text-slate-500 mt-1">
+      Upload PDF or DOCX (Max 2 MB)
+    </p>
+  </div>
+
+  <button
+    onClick={() => {
+      setIsUploadModalOpen(false);
+      setUploadFile(null);
+      setUploadError(null);
+    }}
+    className="w-10 h-10 rounded-xl hover:bg-slate-100 flex items-center justify-center transition"
+  >
+    <X size={20} />
+  </button>
 </div>
 
             <div className="p-8">
