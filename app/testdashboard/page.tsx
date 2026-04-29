@@ -333,14 +333,16 @@ const handleUpload = async () => {
     setUploadError(null);
 
     const {
-      data: { user },
-    } = await supabase.auth.getUser();
+  data: { session },
+} = await supabase.auth.getSession();
 
-    if (!user) {
-      showToast("Please login first", "error");
-      setUploading(false);
-      return;
-    }
+const userId = session?.user?.id;
+
+if (!userId) {
+  showToast("Please login again", "error");
+  setUploading(false);
+  return; 
+}
 
     const fileExt = uploadFile.name.split(".").pop();
     // eslint-disable-next-line react-hooks/purity
@@ -378,7 +380,7 @@ const handleUpload = async () => {
           name: uploadFile.name,
           file_url: fileUrl,
           parsed_text: parsed.text || "",
-          user_id: user.id,
+          user_id: userId,
         },
       ])
       .select()
