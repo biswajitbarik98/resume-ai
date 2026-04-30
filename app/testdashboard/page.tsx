@@ -66,6 +66,7 @@ interface JobMeta {
   skills: string[];
   experience: string;
   location: string;
+  seniority?: string;
 }
 
 interface ScanHistoryItem {
@@ -821,36 +822,33 @@ if (!res.ok) {
 const score = aiData.score;
 
 setScanData({
-  score: aiData.score,
-  keywordMatch: aiData.keywordMatch,
+  score: aiData.score || 0,
+  keywordMatch: aiData.keywordMatch || 0,
 
   matchedSkills: aiData.matchedSkills || [],
   missingSkills: aiData.missingSkills || [],
 
   strengthsList: aiData.strengthsList || [],
-  improvementsList:
-    aiData.improvementsList || [],
+  improvementsList: aiData.improvementsList || [],
+  suggestionsList: aiData.suggestionsList || [],
 
-  suggestionsList:
-    aiData.suggestionsList || [],
-
-  strengths:
-    aiData.strengthsList?.length || 0,
-
-  improvements:
-    aiData.improvementsList?.length || 0,
-
-  suggestions:
-    aiData.suggestionsList?.length || 0,
+  strengths: aiData.strengthsList?.length || 0,
+  improvements: aiData.improvementsList?.length || 0,
+  suggestions: aiData.suggestionsList?.length || 0,
 
   confidence:
-    aiData.confidence || "High",
+    aiData.confidence ||
+    (aiData.score >= 75
+      ? "High"
+      : aiData.score >= 45
+      ? "Medium"
+      : "Low"),
 
   breakdown: {
-    skills: aiData.keywordMatch,
-    experience: 80,
-    keywords: aiData.keywordMatch,
-    other: 75,
+    skills: aiData.breakdown?.skills || 0,
+    experience: aiData.breakdown?.experience || 0,
+    keywords: aiData.breakdown?.keywords || 0,
+    other: aiData.breakdown?.education || 0,
   },
 });
 
@@ -997,7 +995,7 @@ Areas to Improve:
 };
 
   return (
-    <div className="min-h-screen bg-[#D9D9D9] text-[#0B1F3A] overflow-x-hidden">
+    <div className="min-h-screen bg-[#D9D9D9] text-[#0B1F3A] overflow-x-hidden [&_button]:cursor-pointer [&_a]:cursor-pointer [&_button:disabled]:cursor-not-allowed">
 
       {toast.show && (
   <div className="fixed top-6 right-6 z-[300]">
@@ -1038,12 +1036,15 @@ Areas to Improve:
             <div className="p-4 bg-[#0B1F3A] text-white flex justify-between">
               <div className="font-bold">{viewingResume.name}</div>
 
-              <button onClick={() => setViewingResume(null)}>
+              <button
+  onClick={() => setViewingResume(null)}
+  className="cursor-pointer"
+>
                 <X />
               </button>
             </div>
 
-            <div className="flex-1 relative">
+            <div className="flex-1 rounded-3xl border border-dashed border-slate-300 px-8 py-10 flex flex-col items-center justify-center text-slate-400 text-sm text-center mt-6">fv
               {isViewerLoading && (
     <div className="absolute inset-0 grid place-items-center bg-white z-10">
       <Loader2 className="animate-spin text-blue-600" size={36} />
@@ -1080,10 +1081,10 @@ Areas to Improve:
               {resumeToDelete.name}
             </p>
 
-            <div className="grid grid-cols-2 gap-3 mt-6">
+            <div className="grid md:grid-cols-3 gap-3 mt-6">
               <button
                 onClick={() => setResumeToDelete(null)}
-                className="border rounded-xl py-3"
+                className="border rounded-xl py-3 cursor-pointer"
               >
                 Cancel
               </button>
@@ -1146,7 +1147,7 @@ await supabase
     );
   }
 }}
-                className="bg-red-500 text-white rounded-xl py-3"
+                className="bg-red-500 text-white rounded-xl py-3 cursor-pointer"
               >
                 Delete
               </button>
@@ -1180,7 +1181,7 @@ await supabase
         File extension remains same.
       </p>
 
-      <div className="grid grid-cols-2 gap-3 mt-6">
+      <div className="grid md:grid-cols-3 gap-3 mt-6">
         <button
   onClick={() => {
     setRenameResume(null);
@@ -1238,136 +1239,188 @@ await supabase
 
 {/* COMPLETE ANALYSIS MODAL */}
 {showAnalysisModal && (
-  <div className="fixed inset-0 bg-black/60 z-[140] grid place-items-center p-4">
+<div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[140] grid place-items-center p-4">
 
-    <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+<div className="bg-white rounded-[28px] max-w-5xl w-full max-h-[92vh] overflow-y-auto shadow-2xl border border-slate-200">
 
-      {/* Header */}
-      <div className="p-6 border-b flex justify-between items-center">
-        <div>
-          <h2 className="text-2xl font-bold text-[#0B1F3A]">
-            Complete Analysis
-          </h2>
+{/* HEADER */}
+<div className="sticky top-0 z-20 bg-white border-b px-8 py-6 flex justify-between items-center">
 
-          <p className="text-sm text-slate-500 mt-1">
-            Detailed AI insights for {selectedResumeName}
-          </p>
-        </div>
+<div>
+<h2 className="text-3xl font-bold text-[#0B1F3A]">
+ATS Intelligence Report
+</h2>
 
-        <button
-          onClick={() => setShowAnalysisModal(false)}
-          className="text-slate-500 hover:text-black"
-        >
-          <X />
-        </button>
-      </div>
-
-      {/* Body */}
-      <div className="p-6 space-y-6">
-
-        {/* Score Cards */}
-        <div className="grid md:grid-cols-4 gap-4">
-
-          <MetricBox
-  title="ATS Score"
-  value={`${scanData.score}`}
-  sub="Dynamic Score"
-  color="green"
-/>
-
-<MetricBox
-  title="Keyword Match"
-  value={`${scanData.keywordMatch}%`}
-  sub="Matched"
-  color="blue"
-/>
-
-<MetricBox
-  title="Strengths"
-  value={`${scanData.strengths}`}
-  sub="Found"
-  color="emerald"
-/>
-
-<MetricBox
-  title="Improvements"
-  value={`${scanData.improvements}`}
-  sub="Needed"
-  color="orange"
-/>
-
-<MetricBox
-  title="AI Suggestions"
-  value={`${scanData.suggestions}`}
-  sub="Generated"
-  color="purple"
-/>
-
-        </div>
-
-        {/* Missing Keywords */}
-        <div className="rounded-3xl border p-6">
-          <h3 className="font-bold text-[#0B1F3A] mb-4">
-            Missing Keywords
-          </h3>
-
-          <div className="flex flex-wrap gap-2">
-  {(scanData.missingSkills.length > 0
-    ? scanData.missingSkills
-    : ["No major missing keywords"]
-  ).map((item) => (
-    <span
-      key={item}
-      className={`px-3 py-2 rounded-full text-sm ${
-        item === "No major missing keywords"
-          ? "bg-green-50 text-green-600"
-          : "bg-red-50 text-red-600"
-      }`}
-    >
-      {item}
-    </span>
-  ))}
+<p className="text-sm text-slate-500 mt-1">
+For {selectedResumeName}
+</p>
 </div>
-        </div>
 
-        {/* Suggestions */}
-        <div className="rounded-3xl border p-6">
-          <h3 className="font-bold text-[#0B1F3A] mb-4">
-            AI Suggestions
-          </h3>
+<div className="flex items-center gap-3">
 
-          <ul className="space-y-3 text-sm text-slate-600">
-  {(scanData.suggestionsList || []).map(
-    (item, index) => (
-      <li key={index}>
-        ✓ {item}
-      </li>
-    )
-  )}
+<span className={`px-4 py-2 rounded-full text-sm font-semibold ${
+scanData.score >= 80
+? "bg-green-100 text-green-700"
+: scanData.score >= 60
+? "bg-orange-100 text-orange-700"
+: "bg-red-100 text-red-700"
+}`}>
+{scanData.score >= 80
+? "Excellent Match"
+: scanData.score >= 60
+? "Moderate Match"
+: "Needs Improvement"}
+</span>
+
+<button
+onClick={() => setShowAnalysisModal(false)}
+className="w-11 h-11 rounded-xl hover:bg-slate-100 flex items-center justify-center"
+>
+<X size={20}/>
+</button>
+
+</div>
+</div>
+
+{/* BODY */}
+<div className="p-8 space-y-8">
+
+{/* TOP GRID */}
+<div className="grid md:grid-cols-4 gap-5">
+
+<ScoreRing score={scanData.score} />
+
+<MetricBox
+title="Keyword Match"
+value={`${scanData.keywordMatch}%`}
+sub="Matched Terms"
+color="blue"
+/>
+
+<MetricBox
+title="Strengths"
+value={`${scanData.strengths}`}
+sub="Strong Areas"
+color="emerald"
+/>
+
+<MetricBox
+title="Improvements"
+value={`${scanData.improvements}`}
+sub="Need Attention"
+color="orange"
+/>
+
+</div>
+
+{/* SKILL GAP HEATMAP */}
+<div className="rounded-3xl border border-slate-200 p-6">
+
+<h3 className="text-xl font-bold text-[#0B1F3A] mb-5">
+Skill Gap Heat Map
+</h3>
+
+<div className="grid sm:grid-cols-2 gap-4">
+
+{scanData.missingSkills.map((skill,index)=>(
+<div
+key={index}
+className="rounded-2xl px-4 py-3 bg-red-50 border border-red-100 flex justify-between items-center"
+>
+<span className="font-medium text-red-700">{skill}</span>
+<span className="text-xs px-3 py-1 rounded-full bg-red-100 text-red-600">
+Missing
+</span>
+</div>
+))}
+
+{scanData.matchedSkills.slice(0,4).map((skill,index)=>(
+<div
+key={index}
+className="rounded-2xl px-4 py-3 bg-green-50 border border-green-100 flex justify-between items-center"
+>
+<span className="font-medium text-green-700">{skill}</span>
+<span className="text-xs px-3 py-1 rounded-full bg-green-100 text-green-600">
+Matched
+</span>
+</div>
+))}
+
+</div>
+</div>
+
+{/* IMPROVEMENT ACTIONS */}
+<div className="grid md:grid-cols-2 gap-6">
+
+<div className="rounded-3xl border p-6">
+<h3 className="font-bold text-lg mb-4 text-[#0B1F3A]">
+Priority Improvements
+</h3>
+
+<ul className="space-y-4">
+{scanData.improvementsList.map((item,index)=>(
+<li key={index} className="flex gap-3">
+<AlertTriangle className="text-orange-500 shrink-0 mt-1" size={18}/>
+<span className="text-slate-700 leading-relaxed">{item}</span>
+</li>
+))}
 </ul>
-        </div>
+</div>
 
-      </div>
+<div className="rounded-3xl border p-6">
+<h3 className="font-bold text-lg mb-4 text-[#0B1F3A]">
+AI Suggestions
+</h3>
 
-      {/* Footer */}
-      <div className="border-t p-6 flex justify-end gap-3">
-        <button
-          onClick={() => setShowAnalysisModal(false)}
-          className="px-6 py-3 rounded-2xl border"
-        >
-          Close
-        </button>
+<ul className="space-y-4">
+{scanData.suggestionsList.map((item,index)=>(
+<li key={index} className="flex gap-3">
+<CheckCircle2 className="text-green-500 shrink-0 mt-1" size={18}/>
+<span className="text-slate-700 leading-relaxed">{item}</span>
+</li>
+))}
+</ul>
+</div>
 
-        <button
-          onClick={handleDownloadReport}
-          className="px-6 py-3 rounded-2xl bg-blue-600 text-white"
-        >
-          Download Report
-        </button>
-      </div>
+</div>
 
-    </div>
-  </div>
+{/* MATCH BREAKDOWN */}
+<div className="rounded-3xl border p-6">
+<h3 className="font-bold text-lg mb-5 text-[#0B1F3A]">
+ATS Match Breakdown
+</h3>
+
+<div className="space-y-5">
+<BarRow label="Skills Fit" value={scanData.breakdown.skills} color="bg-blue-500"/>
+<BarRow label="Experience Fit" value={scanData.breakdown.experience} color="bg-indigo-500"/>
+<BarRow label="Keyword Fit" value={scanData.breakdown.keywords} color="bg-orange-500"/>
+<BarRow label="Overall Readiness" value={scanData.breakdown.other} color="bg-green-500"/>
+</div>
+</div>
+
+</div>
+
+{/* FOOTER */}
+<div className="sticky bottom-0 bg-white border-t px-8 py-5 flex justify-end gap-4">
+
+<button
+onClick={() => setShowAnalysisModal(false)}
+className="px-6 py-3 rounded-2xl border hover:bg-slate-50"
+>
+Close
+</button>
+
+<button
+onClick={handleDownloadReport}
+className="px-6 py-3 rounded-2xl bg-blue-600 text-white hover:bg-blue-700"
+>
+Download Report
+</button>
+
+</div>
+
+</div>
+</div>
 )}
 
 
@@ -1383,7 +1436,7 @@ await supabase
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 mt-6 text-sm">
+            <div className="grid md:grid-cols-3 gap-3 mt-6 text-sm">
               {(
   scanData.matchedSkills.length > 0
     ? scanData.matchedSkills
@@ -1914,10 +1967,10 @@ await supabase
   </div>
 
   {/* Grid */}
-  <div className="grid lg:grid-cols-2 gap-6 items-stretch">
+  <div className="grid lg:grid-cols-2 grid-cols-1 gap-6 items-stretch">
 
     {/* LEFT */}
-    <div className="rounded-3xl border border-slate-200 bg-slate-50 p-6 h-full flex flex-col">
+    <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm flex flex-col gap-5 h-full">
 
       <h3 className="text-xl font-bold text-[#0B1F3A] mb-2">
         Scan Input
@@ -1928,44 +1981,40 @@ await supabase
       </p>
 
       {/* Tabs */}
-<div className="grid grid-cols-2 gap-3 mb-4">
-  <button
-    onClick={() => {
-      setScanInputMode("text");
-      setJobInput("");
-    }}
-    className={`rounded-2xl py-3 font-medium border transition ${
-      scanInputMode === "text"
-        ? "bg-white border-blue-200 text-blue-600"
-        : "bg-slate-100 text-slate-500 border-transparent"
-    }`}
-  >
-    Paste Job Description
-  </button>
+<div className="grid sm:grid-cols-2 grid-cols-1 gap-3 mb-5">
 
-  <button
-    onClick={() => {
-      setScanInputMode("url");
-      setJobInput("");
-    }}
-    className={`rounded-2xl py-3 font-medium border transition ${
-      scanInputMode === "url"
-        ? "bg-white border-blue-200 text-blue-600"
-        : "bg-slate-100 text-slate-500 border-transparent"
-    }`}
-  >
-    Job URL
-  </button>
+<button
+className={`flex-1 h-11 rounded-2xl border text-sm font-medium transition ${
+scanInputMode === "text"
+? "border-blue-500 bg-blue-50 text-blue-700"
+: "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+}`}
+onClick={() => setScanInputMode("text")}
+>
+Paste Job Description
+</button>
+
+<button
+className={`flex-1 h-11 rounded-2xl border text-sm font-medium transition ${
+scanInputMode === "url"
+? "border-blue-500 bg-blue-50 text-blue-700"
+: "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+}`}
+onClick={() => setScanInputMode("url")}
+>
+Job URL
+</button>
+
 </div>
 
 {/* Input Area */}
 {scanInputMode === "text" ? (
   <textarea
-    rows={10}
+    rows={8}
     value={jobInput}
     onChange={(e) => setJobInput(e.target.value)}
     placeholder="Paste full job description here..."
-    className="w-full flex-1 border border-slate-300 rounded-2xl px-5 py-4 bg-white resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+    className="w-full flex-1 min-h-[240px] border border-slate-300 rounded-2xl px-5 py-4 bg-white resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
   />
 ) : (
   <input
@@ -1991,11 +2040,11 @@ await supabase
       )}
 
       <div
-  className={`grid gap-3 mt-auto pt-5 ${
-    confirmedResumeId
-      ? "sm:grid-cols-2"
-      : "grid-cols-1"
-  }`}
+  className={`grid gap-3 pt-5 ${
+confirmedResumeId
+? "md:grid-cols-2 grid-cols-1"
+: "grid-cols-1"
+}`}
 >
 
         <button
@@ -2033,7 +2082,7 @@ await supabase
     </div>
 
     {/* RIGHT */}
-    <div className="rounded-3xl border border-slate-200 bg-white p-6 h-full flex flex-col">
+    <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm h-full flex flex-col">
 
       <h3 className="text-xl font-bold text-[#0B1F3A] mb-2">
         Detected Job Details
@@ -2046,21 +2095,35 @@ await supabase
       {jobMeta ? (
   <>
     {/* Top Role Card */}
-    <div className="rounded-3xl border border-emerald-100 bg-gradient-to-br from-emerald-50 to-white p-5 flex gap-4 shadow-sm">
+    <div className="rounded-3xl border border-slate-200 bg-gradient-to-br from-blue-50 to-white p-5 shadow-sm">
 
-  <div className="w-14 h-14 rounded-2xl bg-white text-emerald-600 flex items-center justify-center shadow-sm">
-    <Briefcase size={22} />
-  </div>
+<div className="flex justify-between gap-4">
 
-  <div className="min-w-0">
-    <h4 className="text-2xl font-bold text-[#0B1F3A] truncate">
-      {jobMeta.title}
-    </h4>
+<div className="flex gap-4 min-w-0">
 
-    <p className="text-slate-500 mt-1 text-sm">
-      {jobMeta.company} • Full-time
-    </p>
-  </div>
+<div className="w-16 h-16 rounded-2xl bg-white border flex items-center justify-center text-blue-600 shadow-sm">
+<Briefcase size={24} />
+</div>
+
+<div className="min-w-0">
+<h4 className="text-2xl font-bold text-[#0B1F3A] truncate">
+{jobMeta.title !== "Not Found" ? jobMeta.title : "Role Detected"}
+</h4>
+
+<p className="text-slate-500 mt-1 truncate">
+{jobMeta.company !== "Not Found" ? jobMeta.company : "Company Not Mentioned"}
+</p>
+</div>
+
+</div>
+
+{jobMeta.employmentType !== "Not Found" && (
+<span className="h-fit px-4 py-2 rounded-full bg-blue-100 text-blue-700 text-sm font-medium">
+{jobMeta.employmentType}
+</span>
+)}
+
+</div>
 
 </div>
 
@@ -2071,19 +2134,25 @@ await supabase
       </p>
 
       <div className="flex gap-3 flex-wrap">
-        {jobMeta.skills?.map((skill: string) => (
-          <span
-            key={skill}
-            className="px-4 py-2 rounded-full bg-violet-50 text-violet-700 text-sm font-medium border border-violet-100"
-          >
-            {skill}
-          </span>
-        ))}
+        {jobMeta.skills?.[0] !== "Not Found" ? (
+  jobMeta.skills.map((skill: string) => (
+    <span
+      key={skill}
+      className="px-4 py-2 rounded-full bg-violet-50 text-violet-700 text-sm font-medium border border-violet-100"
+    >
+      {skill}
+    </span>
+  ))
+) : (
+  <span className="text-sm text-slate-400 italic">
+    No clear skills detected from this job post
+  </span>
+)}
       </div>
     </div>
 
     {/* Meta Info */}
-    <div className="grid grid-cols-2 gap-4 mt-7">
+    <div className="grid md:grid-cols-3 sm:grid-cols-2 grid-cols-1 gap-4 mt-7">
 
       {/* Experience */}
       <div className="rounded-2xl border border-slate-200 p-5 flex gap-4 items-center">
@@ -2124,9 +2193,28 @@ await supabase
       </div>
 
     </div>
+
+    <div className="rounded-2xl border border-slate-200 p-5 flex gap-4 items-center">
+
+<div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+<TrendingUp size={20} />
+</div>
+
+<div>
+<p className="text-xs text-slate-500">
+Seniority
+</p>
+
+<p className="font-bold text-[#0B1F3A] text-lg">
+{jobMeta.seniority || "Not Mentioned"}
+</p>
+</div>
+
+</div>
+
   </>
 ) : (
-  <div className="min-h-[280px] flex-1 rounded-3xl border border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-400 text-sm text-center px-8">
+  <div className="rounded-3xl border border-dashed border-slate-300 px-8 py-16 flex flex-col items-center justify-center text-slate-400 text-sm text-center">
     <FileSearch size={32} className="mb-4 opacity-50" />
 
     Run a scan to detect job title, company,
@@ -2239,15 +2327,17 @@ await supabase
   {(scanData.strengthsList || []).map(
   (item, index) => (
     <li
-      key={index}
-      className="flex items-center gap-2"
-    >
-      <CheckCircle2
-        size={18}
-        className="text-green-500"
-      />
-      {item}
-    </li>
+  key={index}
+  className="flex items-start gap-3"
+>
+  <CheckCircle2
+    size={18}
+    className="text-green-500 shrink-0 mt-0.5"
+  />
+  <span className="leading-relaxed text-slate-700 font-medium">
+    {item}
+  </span>
+</li>
   )
 )}
 
@@ -2271,15 +2361,17 @@ await supabase
   {(scanData.improvementsList || []).map(
   (item, index) => (
     <li
-      key={index}
-      className="flex items-center gap-2"
-    >
-      <AlertTriangle
-        size={18}
-        className="text-orange-500"
-      />
-      {item}
-    </li>
+  key={index}
+  className="flex items-start gap-3"
+>
+  <AlertTriangle
+    size={18}
+    className="text-orange-500 shrink-0 mt-0.5"
+  />
+  <span className="leading-relaxed text-slate-700 font-medium">
+    {item}
+  </span>
+</li>
   )
 )}
 
@@ -2312,7 +2404,7 @@ await supabase
 />
 
 <BarRow
-  label="Other"
+  label="Education"
   value={scanData.breakdown.other}
   color="bg-green-500"
 />

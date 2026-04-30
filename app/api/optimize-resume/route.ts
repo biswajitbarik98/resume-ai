@@ -14,91 +14,99 @@ export async function POST(req: Request) {
       model: "gemini-2.5-flash-lite",
     });
 
-    const prompt = jobDescription
-  ? `
-You are an expert resume writer and recruiter.
+    const prompt = `
+You are an expert ATS resume optimizer and recruiter.
 
-Rewrite the resume specifically for the target job.
+TASK:
+Optimize the resume professionally for ATS screening while preserving all factual information.
 
-IMPORTANT RULES:
-- Write in natural human tone, not AI tone
-- Sound like a real experienced candidate
-- Avoid robotic phrases and generic buzzwords
-- Avoid lines like "results-driven", "highly motivated", "dynamic professional"
-- Keep wording believable and realistic
-- Keep achievements truthful
-- Add ATS keywords naturally from the job description
-- Improve grammar, clarity and impact
-- Use concise bullet points
-- Use these sections:
-NAME
-SUMMARY
+STRICT RULES:
+1. DO NOT change company names.
+2. DO NOT change dates/timeline.
+3. DO NOT change job titles.
+4. DO NOT add fake achievements.
+5. DO NOT invent tools not supported by experience.
+6. Keep all real facts exactly same.
+
+MAIN GOAL:
+Rewrite the resume with stronger ATS formatting, better wording, cleaner structure.
+
+VERY IMPORTANT - SKILLS SECTION FORMAT:
+
+Always generate the SKILLS section in grouped recruiter-friendly format.
+
+Use categories dynamically based on candidate profile and target job role.
+
+Preferred categories:
+- Tools
+- Languages
+- Data Analysis
+- Data Engineering / Cloud
+- Business Analysis
+- Marketing
+- Finance
+- Soft Skills
+- Other Relevant Skills
+
+Rules for SKILLS section:
+1. Group skills logically.
+2. Use commas for listing.
+3. Use brackets for subskills.
+4. Keep concise but keyword-rich.
+5. Include only real skills present in resume.
+6. Reorder based on target job relevance.
+7. Must be ATS friendly.
+
+Example:
+
 SKILLS
-EXPERIENCE
-PROJECTS
-EDUCATION
-CERTIFICATIONS (if relevant)
 
-- Return plain text only
+Tools: Power BI (Dashboarding, Data Modeling, ETL), Excel (Pivot Table, Lookups, Power Query), Tableau, JIRA
+
+Languages: SQL, Python (Pandas, NumPy, Matplotlib), DAX
+
+Data Engineering: Snowflake, AWS (Glue, Athena, S3, Redshift)
+
+Business Analysis: BRD, FRD, User Stories, Agile, Scrum, UAT
+
+Soft Skills: Stakeholder Management, Communication, Problem Solving, Analytical Thinking
+
+OUTPUT RULES:
+- Plain text only
 - No markdown
-- No asterisks
+- No stars
 - No explanation
+- Use professional ATS resume formatting
+- Don't sound robotic, keep it human and natural
 
 Resume:
 ${resumeText}
 
 Job Description:
-${jobDescription}
-`
-  : `
-You are an expert resume writer and recruiter.
-
-Rewrite this resume for strong ATS performance.
-
-IMPORTANT RULES:
-- Write in natural human tone
-- Sound like a real candidate, not AI generated
-- Avoid robotic phrases and fake corporate buzzwords
-- Keep wording believable and professional
-- Improve grammar and clarity
-- Use concise bullet points
-- Add relevant ATS keywords naturally
-- Keep truthful experience
-- Use these sections:
-NAME
-SUMMARY
-SKILLS
-EXPERIENCE
-PROJECTS
-EDUCATION
-CERTIFICATIONS (if relevant)
-
-- Return plain text only
-- No markdown
-- No asterisks
-- No explanation
-
-Resume:
-${resumeText}
+${jobDescription || "None"}
 `;
 
     const result =
       await model.generateContent(prompt);
 
-    const text =
-      result.response.text();
+    const text = result.response.text();
+
+    const optimizedText = text
+      .replace(/\*\*/g, "")
+      .replace(/###/g, "")
+      .replace(/__/g, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .replace(/SKILLS\s*\n+/g, "SKILLS\n\n")
+      .trim();
 
     return NextResponse.json({
       optimizedText:
-        text || "No output generated",
+        optimizedText || "No output generated",
     });
-  } catch (error: any) {
+  } catch (error) {
+    console.error("optimize-resume error:", error);
     return NextResponse.json(
-      {
-        error:
-          error.message ||
-          "Optimization failed",
-      },
+      { error: "Unable to optimize resume" },
       { status: 500 }
     );
   }
